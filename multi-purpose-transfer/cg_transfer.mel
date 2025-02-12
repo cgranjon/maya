@@ -1,0 +1,724 @@
+/*--------------------------------------------------------------------------------------------
+    Main procedure:    cg_transfer()
+--------------------------------------------------------------------------------------------*/
+
+//--------------------------------------------------------------------------------------------
+//
+//                                  PROCEDURES
+//
+//--------------------------------------------------------------------------------------------
+
+
+//*** Transfer transform values command
+global proc cg_transferTransform(){
+    delete `parentConstraint -weight 1`;
+    delete `scaleConstraint -offset 1 1 1 -weight 1`;
+}
+        
+//*** transfer UVs command
+global proc cg_transferUVs(){
+    transferAttributes -transferUVs 2 
+                -sampleSpace 5
+                -sourceUvSpace "map1"
+                -targetUvSpace "map1"
+                -searchMethod 3;
+}
+
+//*** Blendshape command
+global proc cg_transferBS(){
+    string $cg_trsfbaseItemLs[] = `textScrollList -q -ai sourceLst`;
+    string $cg_trsftargetItemLs[] = `textScrollList -q -ai targetLst`;
+    string $cg_trsfinBetweenItemLs[] = `textScrollList -q -ai otherLst`;
+
+    if(`checkBox -q -v trsfCBbs`==1){
+        // Normal blendShape
+        for($i=0; $i<(size($cg_trsfbaseItemLs)); $i++){
+            select -r $cg_trsfbaseItemLs[$i];
+            select -add $cg_trsftargetItemLs[$i];
+            blendShape -frontOfChain -w 0 1 -n "blend_#";
+        }        
+    }else if(`checkBox -q -v trsfCBbsOt`==1){
+        // blendShape with in-between
+        for($i=0; $i<(size($cg_trsfbaseItemLs)); $i++){
+            select -r $cg_trsfbaseItemLs[$i];
+            select -add $cg_trsfinBetweenItemLs[$i];
+            select -add $cg_trsftargetItemLs[$i];
+            blendShape -frontOfChain -w 0 1 -w 1 1 -n "blend_#"; 
+        }
+    }
+    select -cl;
+    print ("Transfer done." + "\n");
+}    
+           
+//*** Transfer command
+global proc cg_transferVtxAttr(){
+    transferAttributes -transferPositions 1 
+                -transferNormals 1 
+                -transferUVs 0 
+                -transferColors 0 
+                -sampleSpace 3 
+                -sourceUvSpace "map1" 
+                -targetUvSpace "map1" 
+                -searchMethod 3
+                -flipUVs 0 
+                -colorBorders 1;
+}     
+          
+//*** Transfer procedure     (MAIN COMMAND)
+global proc defTransfer(){
+    if(`checkBox -q -v trsfCBuv`==1 && `checkBox -q -v trsfCBattr`==0){ // UV only
+        cg_transferUVs();
+    }else if(`checkBox -q -v trsfCBuv`==0 && `checkBox -q -v trsfCBattr`==1){ // transform values only
+        cg_transferTransform();
+    }else if(`checkBox -q -v trsfCBuv`==1 && `checkBox -q -v trsfCBattr`==1){ // UVs + transform values
+        cg_transferTransform();
+        cg_transferUVs();
+    }else if(`checkBox -q -v trsfCBbs`==1){ // blendshape
+        cg_transferBS();
+    }else if(`checkBox -q -v trsfCBbsOt`==1){ // blendshape with in-betweens
+        cg_transferBS();
+    }else if(`checkBox -q -v trsfCBVtxAttr`==1){ // transfer attributes
+        cg_transferVtxAttr();
+    }       
+}
+
+//*** Execute the transfer with conditions.
+global proc doTransfer(){
+    string $cg_trsfactiveSelection[] = `ls -sl`;
+    int $cg_trsfa=`textScrollList -q -ni sourceLst`;
+    int $cg_trsfb=`textScrollList -q -ni targetLst`;
+    int $cg_trsfc = ($cg_trsfa-$cg_trsfb);
+    string $cg_trsfbaseItemLs[] = `textScrollList -q -ai sourceLst`;
+    string $cg_trsftargetItemLs[] = `textScrollList -q -ai targetLst`;
+    string $cg_trsfinBetweenItemLs[] = `textScrollList -q -ai otherLst`;
+    waitCursor -state on;
+
+    if($cg_trsfc==0){ // Exact same amount of bases and targets
+        // Filter blendShape special operation
+        if(`checkBox -q -v trsfCBbs`==1 || `checkBox -q -v trsfCBbsOt`==1){
+            cg_transferBS();
+        }else{
+            for($cg_trsfi=0; $cg_trsfi<($cg_trsfb); $cg_trsfi++){
+                select $cg_trsfbaseItemLs[$cg_trsfi];
+                select -add $cg_trsftargetItemLs[$cg_trsfi];
+                defTransfer();
+                select -r $cg_trsfactiveSelection;
+            } 
+            print ("Transfer done." + "\n");
+        }
+    }else if($cg_trsfa==1 && $cg_trsfc<0){ // One base for mutliple targets
+        for($cg_trsfi=0; $cg_trsfi<($cg_trsfb); $cg_trsfi++){
+            select $cg_trsfbaseItemLs[0];
+            select -add $cg_trsftargetItemLs[$cg_trsfi];
+            defTransfer();
+            select -cl;
+        }
+        print ("Transfer done." + "\n");
+    
+    }else if($cg_trsfa>1 && $cg_trsfc<0){
+        error "There are more than one base listed, and not enough targets. Operation cancelled.";
+    
+    }else if($cg_trsfc>0){
+        error "There are more bases than targets. Operation cancelled.";
+    
+    }else if($cg_trsfa==0 && $cg_trsfb==0){
+        error "Nothing to transfer.";
+    }
+    waitCursor -state off;
+}
+
+// Adding procedure (objects must be selected in viewport)
+global proc trsf_Add(string $cg_trsftrsfListName){
+    string $cg_trsfa[] = `ls -sl`;
+    for($cg_trsfi=0; $cg_trsfi<`size($cg_trsfa)`; $cg_trsfi++){
+        textScrollList -e -a $cg_trsfa[$cg_trsfi] $cg_trsftrsfListName;
+    }
+}
+
+// Remove procedure (objects must be selected in viewport)
+global proc trsf_Remove(string $cg_trsftrsfListName){
+    string $cg_trsfa[] = `ls -sl`;
+    for($cg_trsfi=0; $cg_trsfi<`size($cg_trsfa)`; $cg_trsfi++){
+        textScrollList -e -ri $cg_trsfa[$cg_trsfi] $cg_trsftrsfListName;
+    }
+}
+
+// Sort procedure
+global proc trsfSort(string $cg_trsftrsfSortString){
+    string $cg_trsftrsfCurrentList[] = `textScrollList -q -ai $cg_trsftrsfSortString`;
+    string $cg_trsftrsfSortCurrentList[] = sort ($cg_trsftrsfCurrentList);
+    
+    textScrollList -e -ra $cg_trsftrsfSortString;
+    
+    for($cg_trsfi=0; $cg_trsfi<`size($cg_trsftrsfSortCurrentList)`; $cg_trsfi++){
+            textScrollList -e -a $cg_trsftrsfSortCurrentList[$cg_trsfi] $cg_trsftrsfSortString;
+        }
+}
+
+// update lists with only common items and sort the lists
+global proc cg_trsfFilterCommons(){
+    // query both lists
+    string $cg_trsflist[] = `textScrollList -q -allItems targetLst`;
+    string $cg_trsfitems[] = `textScrollList -q -allItems sourceLst`;
+    
+    // make a new list from existing shapes in both lists
+    
+    string $cg_trsfitemsBuffer[];
+    string $cg_trsfnewList[];
+    string $cg_trsfnewItems[];
+    
+    // index for the new lists
+    $cg_trsfk=0;
+    
+    // loop depending on bases object count
+    for($cg_trsfi=0; $cg_trsfi<(`size($cg_trsfitems)`); $cg_trsfi++){
+        // tokenize shapes in the group of tweak shapes
+        int $cg_trsfitemsTokens = `tokenize $cg_trsfitems[$cg_trsfi] "|" $cg_trsfitemsBuffer`;
+        string $cg_trsfshapeName = $cg_trsfitemsBuffer[$cg_trsfitemsTokens-1];
+        
+        if($cg_trsfitemsTokens !=1){
+            
+            // if several similar shapes, select them
+            select -r ("*|"+$cg_trsfshapeName);
+            // parse them in a var
+            string $cg_trsfnames[] = `ls -sl`;
+            select -cl;
+            // how many are they
+            int $cg_trsfnamesCount = `size($cg_trsfnames)`; // number of similar shapes
+            
+            // run loop as much time as there are similar shapes
+            for($cg_trsfj=0; $cg_trsfj<$cg_trsfnamesCount; $cg_trsfj++){
+                $cg_trsfnewList[$cg_trsfk] = $cg_trsfnames[$cg_trsfj];
+                $cg_trsfk=$cg_trsfk+1; // needs to be updated only if several similar shapes exits
+            }
+        }
+    }    //     print $cg_trsfnewList     clear $cg_trsfnewList  size($cg_trsfnewList)
+    
+    // update list to be only listing items to be removed from textScrollLists
+    $cg_trsflist = stringArrayRemove($cg_trsfnewList, $cg_trsflist);
+    $cg_trsfitems = stringArrayRemove($cg_trsfnewList, $cg_trsfitems);
+    
+    for($cg_trsfi=0; $cg_trsfi<(`size($cg_trsflist)`); $cg_trsfi++){
+        textScrollList -e -ri $cg_trsflist[$cg_trsfi] targetLst;
+    }
+    for($cg_trsfi=0; $cg_trsfi<(`size($cg_trsfitems)`); $cg_trsfi++){
+        textScrollList -e -ri $cg_trsfitems[$cg_trsfi] sourceLst;
+    }
+    trsfSort("targetLst");
+    trsfSort("sourceLst");
+}
+
+// Delete key command
+global proc trsf_DKC(string $cg_trsftrsfListName){
+    string $cg_trsfa[] = `textScrollList -q -si $cg_trsftrsfListName`; 
+    for($cg_trsfobj in $cg_trsfa){
+        textScrollList -edit -ri $cg_trsfobj $cg_trsftrsfListName;
+    }
+    select -r $cg_trsfa;
+}
+    
+// Move up the current item in target list
+global proc trsfTargetMoveUp(){
+    string $cg_trsftargetCrtItm[] = `textScrollList -q -selectItem targetLst`;
+    int $cg_trsftargetCrtPos[] = `textScrollList -q -sii targetLst`;
+    if ($cg_trsftargetCrtPos[0]==1){
+        warning"Item already the first of the list. Operation cancelled.";
+    }else{
+    textScrollList -edit -rii $cg_trsftargetCrtPos[0] targetLst;
+    textScrollList -edit -ap ($cg_trsftargetCrtPos[0]-1) $cg_trsftargetCrtItm[0] targetLst;
+    textScrollList -edit -selectItem $cg_trsftargetCrtItm[0] targetLst;
+    }
+}
+
+// Move down the current item in target list
+global proc trsfTargetMoveDown(){
+    string $cg_trsftargetCrtItm[] = `textScrollList -q -selectItem targetLst`;
+    int $cg_trsftargetCrtPos[] = `textScrollList -q -sii targetLst`;
+    textScrollList -edit -rii $cg_trsftargetCrtPos[0] targetLst;
+    textScrollList -edit -ap ($cg_trsftargetCrtPos[0]+1) $cg_trsftargetCrtItm[0] targetLst;
+    textScrollList -edit -selectItem $cg_trsftargetCrtItm[0] targetLst;
+}
+
+// Move up the current item in base list
+global proc trsfBaseMoveUp(){
+   string $cg_trsfbaseCrtItm[] = `textScrollList -q -selectItem sourceLst`;
+    int $cg_trsfbaseCrtPos[] = `textScrollList -q -sii sourceLst`;
+    if ($cg_trsfbaseCrtPos[0]==1){
+        warning"Item already the first of the list. Operation cancelled.";
+    }else{
+    textScrollList -edit -rii $cg_trsfbaseCrtPos[0] sourceLst;
+    textScrollList -edit -ap ($cg_trsfbaseCrtPos[0]-1) $cg_trsfbaseCrtItm[0] sourceLst;
+    textScrollList -edit -selectItem $cg_trsfbaseCrtItm[0] sourceLst;
+    }
+}
+
+// Move down the current item in base list
+global proc trsfBaseMoveDown(){
+   string $cg_trsfbaseCrtItm[] = `textScrollList -q -si sourceLst`;
+    int $cg_trsfbaseCrtPos[] = `textScrollList -q -sii sourceLst`;
+    
+    textScrollList -edit -rii $cg_trsfbaseCrtPos[0] sourceLst;
+    textScrollList -edit -ap ($cg_trsfbaseCrtPos[0]+1) $cg_trsfbaseCrtItm[0] sourceLst;
+    textScrollList -edit -si $cg_trsfbaseCrtItm[0] sourceLst;
+}
+    
+// Switch lists command
+global proc trsfSwitch(){
+    string $cg_trsfbaseItemLs[] = `textScrollList -q -ai sourceLst`;
+    string $cg_trsftargetItemLs[] = `textScrollList -q -ai targetLst`;
+    
+           
+    textScrollList -e -ra sourceLst;
+    textScrollList -e -ra targetLst;
+    
+    //int $cg_trsfbaseCount = size($cg_trsfbaseList);
+    for($cg_trsfi=0; $cg_trsfi <=((size($cg_trsfbaseItemLs))-1); $cg_trsfi++){
+        textScrollList -edit -a $cg_trsftargetItemLs[$cg_trsfi] sourceLst;
+        textScrollList -edit -a $cg_trsfbaseItemLs[$cg_trsfi] targetLst;
+    }
+}
+/*
+// Command for a Quick transfer
+global proc trsfQuick(){
+    if(`checkBox -q -v trsfCBQuick`==1){
+        columnLayout -e -en 0 col1;
+        columnLayout -e -en 0 col2;  
+    }else{
+        columnLayout -e -en 1 col1;
+        columnLayout -e -en 1 col2;
+    }
+}    
+*/
+// Selection in viewport
+global proc trsfViewportSelect(string $cg_trsftrsfListName){
+    string $cg_trsfitems[] = `textScrollList -q -ai $cg_trsftrsfListName`;
+    select -r $cg_trsfitems;
+}
+
+// Only one checkbox at a time
+global proc cg_trsfOneCbOnly(string $cg_trsfOneCbOnlyString){
+    switch($cg_trsfOneCbOnlyString){
+        case "UVs":
+            checkBox -e -v 0 trsfCBVtxAttr;
+            checkBox -e -v 0 trsfCBbs;
+            checkBox -e -v 0 trsfCBbsOt;
+            checkBox -e -v 0 trsfCBattr;
+        break;
+        case "VtxAttr":
+            checkBox -e -v 0 trsfCBuv;
+            checkBox -e -v 0 trsfCBbs;
+            checkBox -e -v 0 trsfCBbsOt;
+            checkBox -e -v 0 trsfCBattr;
+        break;
+        case "Blendshape":
+            checkBox -e -v 0 trsfCBuv;
+            checkBox -e -v 0 trsfCBVtxAttr;
+            checkBox -e -v 0 trsfCBbsOt;
+            checkBox -e -v 0 trsfCBattr;
+        break;
+        case "BlendshapeIB":
+            checkBox -e -v 0 trsfCBuv;
+            checkBox -e -v 0 trsfCBVtxAttr;
+            checkBox -e -v 0 trsfCBattr;
+            checkBox -e -v 0 trsfCBbs;
+        break;
+        case "Values":
+            checkBox -e -v 0 trsfCBuv;
+            checkBox -e -v 0 trsfCBVtxAttr;
+            checkBox -e -v 0 trsfCBbs;
+            checkBox -e -v 0 trsfCBbsOt;
+        break;
+        case "quick":
+            checkBox -e -v 0 trsfCBuv;
+            checkBox -e -v 0 trsfCBVtxAttr;
+            checkBox -e -v 0 trsfCBbs;
+            checkBox -e -v 0 trsfCBbsOt;
+            checkBox -e -v 0 trsfCBattr;
+        break;
+    }
+}
+
+// Marvelous Designer reprojection command (disable everything else in the script)
+global proc trsfMDCmd(){
+    if(`checkBox -q -v trsfCBMD`==1){
+        formLayout -e -en 0 col1;
+        formLayout -e -en 0 col2;
+        formLayout -e -en 0 col3;
+        checkBox -e -en 0 trsfCBuv;
+        checkBox -e -en 0 trsfCBattr;
+        //checkBox -e -en 0 trsfCBQuick;
+        checkBox -e -en 0 trsfCBVtxAttr;
+        checkBox -e -en 0 trsfCBbs;
+        checkBox -e -en 0 trsfCBbsOt;
+        button -e -en 0 trsfSwitch;
+        button -e -en 0 trsfSelBtn1;
+        button -e -en 0 trsfSelBtn2;
+        button -e -en 0 trsfCommonBtn;
+        button -e -en 0 MCbtn;
+        iconTextButton -e -bgc 0.7 0.7 0.6 trsfBtn;
+    }else if(`checkBox -q -v trsfCBMD`==0){
+        formLayout -e -en 1 col1;
+        formLayout -e -en 1 col2;
+        formLayout -e -en 0 col3;
+        checkBox -e -en 1 trsfCBuv;
+        checkBox -e -en 1 trsfCBattr;
+        //checkBox -e -en 1 trsfCBQuick;
+        checkBox -e -en 1 trsfCBVtxAttr;
+        checkBox -e -en 1 trsfCBbs;
+        checkBox -e -en 1 trsfCBbsOt;
+        button -e -en 1 trsfSwitch;
+        button -e -en 1 trsfSelBtn1;
+        button -e -en 1 trsfSelBtn2;
+        button -e -en 1 trsfCommonBtn;
+        button -e -en 1 MCbtn;
+        iconTextButton -e -bgc 0.6 0.7 0.7 trsfBtn;
+    }
+}
+    
+// Marvelous Designer preset action
+global proc cgtransferMDCmd(){
+    string $cg_trsfsel[] = `ls -sl`;
+
+        if(`size $cg_trsfsel` != 3){
+            error "There must be precisely 3 objects selected.";
+        }else{
+            select -cl;
+            select -r $cg_trsfsel[1];
+            select -tgl $cg_trsfsel[2]; 
+            
+            // transfer uvs
+            transferAttributes -transferPositions 0 
+                    -transferNormals 0 
+                    -transferUVs 2 
+                    -transferColors 0 
+                    -sampleSpace 1 
+                    -sourceUvSpace "map1" 
+                    -targetUvSpace "map1" 
+                    -searchMethod 3
+                    -flipUVs 0 
+                    -colorBorders 1;
+            
+            select -r $cg_trsfsel[0];
+            select -tgl $cg_trsfsel[2];
+            
+            //transfer vertices positions
+            transferAttributes -transferPositions 1 
+                    -transferNormals 1 
+                    -transferUVs 0 
+                    -transferColors 0 
+                    -sampleSpace 3 
+                    -sourceUvSpace "map1" 
+                    -targetUvSpace "map1" 
+                    -searchMethod 3
+                    -flipUVs 0 
+                    -colorBorders 1;
+            
+            select -r $cg_trsfsel[2];
+            print "Reprojection complete.";
+        }
+}
+
+// Multi Cable script
+global proc cg_MCPosition(){
+    string $cg_trsfsel[] = `ls -sl`;
+    
+    float $cg_trsfcurveSrtPt[] = `pointPosition -w ($cg_trsfsel[0]+".cv[0]")`;
+    float $cg_trsfcurveSndPt[] = `pointPosition -w ($cg_trsfsel[0]+".cv[1]")`;
+    
+    move -a $cg_trsfcurveSrtPt[0] $cg_trsfcurveSrtPt[1] $cg_trsfcurveSrtPt[2] $cg_trsfsel[1];
+    
+    
+    float $cg_trsfcrvVector[];
+    $cg_trsfcrvVector[0]=$cg_trsfcurveSndPt[0]-$cg_trsfcurveSrtPt[0];
+    $cg_trsfcrvVector[1]=$cg_trsfcurveSndPt[1]-$cg_trsfcurveSrtPt[1];
+    $cg_trsfcrvVector[2]=$cg_trsfcurveSndPt[2]-$cg_trsfcurveSrtPt[2];
+    
+    float $cg_trsfvecX = `rad_to_deg $cg_trsfcrvVector[0]`;
+    float $cg_trsfvecY = `rad_to_deg $cg_trsfcrvVector[1]`;
+    float $cg_trsfvecZ = `rad_to_deg $cg_trsfcrvVector[2]`;
+    
+    float $cg_trsfrot[] = `angleBetween -euler -v1 0 1 0 -v2 $cg_trsfcrvVector[0] $cg_trsfcrvVector[1] $cg_trsfcrvVector[2]`;
+    
+    rotate $cg_trsfrot[0] $cg_trsfrot[1] $cg_trsfrot[2] $cg_trsfsel[1];
+}
+
+global proc cgMultiCablesLaunch(){
+    string $cg_MCBases[] = `textScrollList -q -ai sourceLst`; // curves
+    string $cg_MCTargets[] = `textScrollList -q -ai targetLst`; // profiles
+    int $cg_MCBaseCount = `size ($cg_MCBases)`;
+    int $cg_MCTargetCount = `size ($cg_MCTargets)`;
+    select -cl;
+
+    if($cg_MCBaseCount == $cg_MCTargetCount){
+        for($i=0; $i<$cg_MCBaseCount; $i++){
+            select -r $cg_MCBases[$i];
+            select -tgl $cg_MCTargets[$i];
+            cg_MCPosition();
+            
+            // Evaluate the polycount of the profile
+            int $cg_MCObjFaceCnt[] = `polyEvaluate -f $cg_MCTargets[$i]`;
+            int $cg_MCObjFaceIndx = ($cg_MCObjFaceCnt[0]-1);
+            
+            // Get curves spans amount
+            int $cg_MC_divisions = `getAttr ($cg_MCBases[$i]+".spans")`;
+            
+            polyExtrudeFacet -divisions ($cg_MC_divisions * 1)
+                -inputCurve $cg_MCBases[$i]
+                ($cg_MCTargets[$i]+".f[0:"+$cg_MCObjFaceIndx+"]");
+        }
+           
+    }else{
+        print "Not the same bases and targets count operation cancelled.";
+    }
+    select -cl;
+}
+
+   
+//--------------------------------------------------------------------------------------------
+//
+//                                      INTERFACE
+//
+//--------------------------------------------------------------------------------------------
+
+global proc cg_transfer(){
+    if(`window -q -ex trsfUI`){deleteUI trsfUI;}
+    if(`textScrollList -q -ex sourceLst`){deleteUI sourceLst;}
+    if(`textScrollList -q -ex targetLst`){deleteUI targetLst;}
+    if(`textScrollList -q -ex otherLst`){deleteUI otherLst;}
+
+int $cg_trsftopBtnH = 16;
+int $cg_trsfw1 = 200;
+int $cg_trsfh1 = 300;
+
+string $cg_trsftrsfWin = `window -title"cg_Transfer" -tlb false -w (($cg_trsfw1*2)+15) -s true trsfUI`;
+
+    formLayout -enableBackground false trsfLyt;
+    
+    paneLayout -cn "vertical3" cg_trsfPaneLyt; 
+    // Bases listing    
+        formLayout -p cg_trsfPaneLyt col1;
+            text -l"Source objects (sourceLst)" -h 24 bl_txt_1;
+            button -l"Add" -h $cg_trsftopBtnH -c"trsf_Add(\"sourceLst\");" bl_btn_1;
+            button -l"Remove" -h $cg_trsftopBtnH -c"trsf_Remove(\"sourceLst\");" bl_btn_2;
+            button -l"Sort" -w (($cg_trsfw1/3)-2) -h $cg_trsftopBtnH -c"trsfSort(\"sourceLst\")" bl_btn_3;
+            textScrollList -da 
+                    -h $cg_trsfh1
+                    -ann"Requirements:\n - 1 item only\n - Numbers of bases and targets must match"
+                    -allowMultiSelection true 
+                    -dkc "trsf_DKC(\"sourceLst\");"
+                    -dcc "string $cg_trsfb[] = `textScrollList -q -si sourceLst`; select -r $cg_trsfb[0];"
+                    sourceLst;
+            button -en true -l"Move Up" -c"trsfTargetMoveUp()" -w (($cg_trsfw1/3)) -h $cg_trsftopBtnH bl_btn_4;
+            button -en true -l"Move Down" -c"trsfTargetMoveDown()" -w (($cg_trsfw1/3)) -h $cg_trsftopBtnH bl_btn_5;
+            button -l"Clear" -c"textScrollList -edit -ra sourceLst;" -w (($cg_trsfw1/3)-2) -h $cg_trsftopBtnH bl_btn_6;
+            
+        formLayout -e 
+            -af bl_txt_1 "top" 0
+            -af bl_txt_1 "left" 0
+            -af bl_txt_1 "right" 0
+            -ac bl_btn_1 "top" 0 bl_txt_1
+            -af bl_btn_1 "left" 0
+            -ap bl_btn_1 "right" 0 33                        
+            -aoc bl_btn_2 "top" 0 bl_btn_1
+            -ap bl_btn_2 "left" 0 33 
+            -ap bl_btn_2 "right" 0 66            
+            -aoc bl_btn_3 "top" 0 bl_btn_1
+            -af bl_btn_3 "right" 0   
+            -ap bl_btn_3 "left" 0 66            
+            -af bl_btn_4 "left" 0
+            -af bl_btn_4 "bottom" 0
+            -ap bl_btn_4 "right" 0 33            
+            -aoc bl_btn_5 "top" 0 bl_btn_4
+            -ap bl_btn_5 "left" 0 33 
+            -ap bl_btn_5 "right" 0 66            
+            -aoc bl_btn_6 "top" 0 bl_btn_4
+            -af bl_btn_6 "right" 0   
+            -ap bl_btn_6 "left" 0 66
+            -ac sourceLst "top" 0 bl_btn_1
+            -af sourceLst "left" 0
+            -af sourceLst "right" 0
+            -ac sourceLst "bottom" 0 bl_btn_4            
+        col1;
+
+    // Target Listing   
+        formLayout -p cg_trsfPaneLyt col2;
+            text -l"Target objects (targetLst)" -h 24 tl_txt_1;
+            button -l"Add" -h $cg_trsftopBtnH -c"trsf_Add(\"targetLst\");" tl_btn_1;
+            button -l"Remove" -h $cg_trsftopBtnH -c"trsf_Remove(\"targetLst\");" tl_btn_2;
+            button -l"Sort" -w (($cg_trsfw1/3)-2) -h $cg_trsftopBtnH -c"trsfSort(\"targetLst\")" tl_btn_3;
+            textScrollList -da 
+                    -h $cg_trsfh1
+                    -ann"Any amount of items you want."
+                    -allowMultiSelection true 
+                    -dkc "trsf_DKC(\"targetLst\");"
+                    -dcc "string $cg_trsfb[] = `textScrollList -q -si targetLst`; select -r $cg_trsfb[0];"
+                    targetLst;
+            button -en true -l"Move Up" -c"trsfTargetMoveUp()" -w (($cg_trsfw1/3)) -h $cg_trsftopBtnH tl_btn_4;
+            button -en true -l"Move Down" -c"trsfTargetMoveDown()" -w (($cg_trsfw1/3)) -h $cg_trsftopBtnH tl_btn_5;
+            button -l"Clear" -c"textScrollList -edit -ra targetLst;" -w (($cg_trsfw1/3)-2) -h $cg_trsftopBtnH tl_btn_6;
+            
+        formLayout -e 
+            -af tl_txt_1 "top" 0
+            -af tl_txt_1 "left" 0
+            -af tl_txt_1 "right" 0
+            -ac tl_btn_1 "top" 0 tl_txt_1
+            -af tl_btn_1 "left" 0
+            -ap tl_btn_1 "right" 0 33                        
+            -aoc tl_btn_2 "top" 0 tl_btn_1
+            -ap tl_btn_2 "left" 0 33 
+            -ap tl_btn_2 "right" 0 66            
+            -aoc tl_btn_3 "top" 0 tl_btn_1
+            -af tl_btn_3 "right" 0   
+            -ap tl_btn_3 "left" 0 66            
+            -af tl_btn_4 "left" 0
+            -af tl_btn_4 "bottom" 0
+            -ap tl_btn_4 "right" 0 33            
+            -aoc tl_btn_5 "top" 0 tl_btn_4
+            -ap tl_btn_5 "left" 0 33 
+            -ap tl_btn_5 "right" 0 66            
+            -aoc tl_btn_6 "top" 0 tl_btn_4
+            -af tl_btn_6 "right" 0   
+            -ap tl_btn_6 "left" 0 66
+            -ac targetLst "top" 0 tl_btn_1
+            -af targetLst "left" 0
+            -af targetLst "right" 0
+            -ac targetLst "bottom" 0 tl_btn_4            
+        col2;
+
+    // In-between Listing   
+        formLayout -p cg_trsfPaneLyt col3;
+            text -l"Other objects (otherLst)" -h 24 ot_txt_1;
+            button -l"Add" -h $cg_trsftopBtnH -c"trsf_Add(\"otherLst\");" ot_btn_1;
+            button -l"Remove" -h $cg_trsftopBtnH -c"trsf_Remove(\"otherLst\");" ot_btn_2;
+            button -l"Sort" -w (($cg_trsfw1/3)-2) -h $cg_trsftopBtnH -c"trsfSort(\"otherLst\")" ot_btn_3;
+            textScrollList -da 
+                    -h $cg_trsfh1
+                    -ann"Has to match the number of Targets."
+                    -allowMultiSelection true 
+                    -dkc "trsf_DKC(\"otherLst\");"
+                    -dcc "string $cg_trsfb[] = `textScrollList -q -si otherLst`; select -r $cg_trsfb[0];"
+                    otherLst;
+            button -en true -l"Move Up" -c"trsfTargetMoveUp()" -w (($cg_trsfw1/3)) -h $cg_trsftopBtnH ot_btn_4;
+            button -en true -l"Move Down" -c"trsfTargetMoveDown()" -w (($cg_trsfw1/3)) -h $cg_trsftopBtnH ot_btn_5;
+            button -l"Clear" -c"textScrollList -edit -ra otherLst;" -w (($cg_trsfw1/3)-2) -h $cg_trsftopBtnH ot_btn_6;
+            
+        formLayout -e 
+            -af ot_txt_1 "top" 0
+            -af ot_txt_1 "left" 0
+            -af ot_txt_1 "right" 0
+            -ac ot_btn_1 "top" 0 ot_txt_1
+            -af ot_btn_1 "left" 0
+            -ap ot_btn_1 "right" 0 33                        
+            -aoc ot_btn_2 "top" 0 ot_btn_1
+            -ap ot_btn_2 "left" 0 33 
+            -ap ot_btn_2 "right" 0 66            
+            -aoc ot_btn_3 "top" 0 ot_btn_1
+            -af ot_btn_3 "right" 0   
+            -ap ot_btn_3 "left" 0 66            
+            -af ot_btn_4 "left" 0
+            -af ot_btn_4 "bottom" 0
+            -ap ot_btn_4 "right" 0 33            
+            -aoc ot_btn_5 "top" 0 ot_btn_4
+            -ap ot_btn_5 "left" 0 33 
+            -ap ot_btn_5 "right" 0 66            
+            -aoc ot_btn_6 "top" 0 ot_btn_4
+            -af ot_btn_6 "right" 0   
+            -ap ot_btn_6 "left" 0 66
+            -ac otherLst "top" 0 ot_btn_1
+            -af otherLst "left" 0
+            -af otherLst "right" 0
+            -ac otherLst "bottom" 0 ot_btn_4            
+        col3;                                                                           
+    setParent..;
+
+        button -l"Switch sides" -ann "Switches Bases and Targets" -c"trsfSwitch();" -h $cg_trsftopBtnH -bgc .2 .2 .2 -p trsfLyt trsfSwitch;
+        button -l"Select bases" -h $cg_trsftopBtnH -c"trsfViewportSelect(\"sourceLst\")" -p trsfLyt trsfSelBtn1;
+        button -l"Select targets" -h $cg_trsftopBtnH -c"trsfViewportSelect(\"targetLst\")" -p trsfLyt trsfSelBtn2;
+        button -l"Filter by common items" -h $cg_trsftopBtnH -c"cg_trsfFilterCommons()" -p trsfLyt trsfCommonBtn;
+        iconTextButton -st "textOnly" -l">>>    EXECUTE    <<<" -c"if(`checkBox -q -v trsfCBMD`==1){cgtransferMDCmd();}else{doTransfer();}" -h 40 -bgc 0.6 0.7 0.7 -p trsfLyt trsfBtn;
+        button -en true 
+            -l "Cables Maker"
+            -ann "Multiple PolyExtrude with:\n -base = a curve\n -target = a polygonal profile\n\n\ The amount of bases and targets must be the same."
+            -c "cgMultiCablesLaunch()"
+            -h $cg_trsftopBtnH
+            -p trsfLyt
+            MCbtn;
+    
+    // Check boxes and buttons
+    rowColumnLayout -nc 1 -p trsfLyt cg_cb_ctn;
+        /*
+        checkBox -l "Quick Transfer" 
+            -v 0 
+            -onc"trsfQuick(); cg_trsfOneCbOnly(\"quick\");" 
+            -ofc"trsfQuick();" 
+            trsfCBQuick;
+        */
+        checkBox -l "Marvelous Designer Preset" 
+            -ann " Order of selection:\n 1.tetras simulation\n 2.tetra pattern\n 3.retopo pattern" 
+            -v 0
+            -onc"trsfMDCmd();"
+            -ofc"trsfMDCmd();"
+            trsfCBMD;
+        separator -h 10 -style "none";
+        checkBox -l "UVs (topology-based, map1 only)" 
+            -v 0 
+            -onCommand"cg_trsfOneCbOnly(\"UVs\")"
+            trsfCBuv;
+        checkBox -l "Vertices positions from UVs" 
+            -v 0 
+            -onCommand"cg_trsfOneCbOnly(\"VtxAttr\")"
+            trsfCBVtxAttr;
+        checkBox -l "Blendshape"
+            -ann "Targets are deformed with Bases. Weights set to 1 by default." 
+            -v 1
+            -onCommand"cg_trsfOneCbOnly(\"Blendshape\")" 
+            trsfCBbs;
+        checkBox -l "Blendshape with deltas"
+            -ann "Targets are deformed with Bases and Other Objects. All Weights set to 1 by default." 
+            -v 0
+            -onCommand"cg_trsfOneCbOnly(\"BlendshapeIB\")" 
+            trsfCBbsOt;
+        checkBox -l "Transform Values" 
+            -v 0 
+            -onCommand"cg_trsfOneCbOnly(\"Values\")"
+            trsfCBattr;
+    setParent..;    
+    
+    formLayout -e 
+        -af cg_trsfPaneLyt "right" 5
+        -af cg_trsfPaneLyt "top" 5
+        -af cg_trsfPaneLyt "left" 5
+        -ac cg_trsfPaneLyt "bottom" 2 trsfSelBtn1
+        
+        -af cg_cb_ctn "left" 6
+        -af cg_cb_ctn "right" 6
+        -af cg_cb_ctn "bottom" 6
+        
+        -aoc MCbtn "left" 0 cg_cb_ctn
+        -aoc MCbtn "right" 0 cg_cb_ctn
+        -ac MCbtn "bottom" 3 cg_cb_ctn
+
+        -aoc trsfBtn "right" 0 cg_cb_ctn
+        -aoc trsfBtn "left" 0 cg_cb_ctn
+        -ac trsfBtn "bottom" 2 MCbtn
+
+        -ap trsfCommonBtn "right" 0 66
+        -aoc trsfCommonBtn "left" 0 cg_cb_ctn
+        -ac trsfCommonBtn "bottom" 2 trsfBtn
+                
+        -aoc trsfSelBtn1 "left" 0 cg_cb_ctn
+        -ac trsfSelBtn1 "right" 0 trsfSwitch
+        -ac trsfSelBtn1 "bottom" 2 trsfCommonBtn
+
+        -ap trsfSwitch "left" 0 22
+        -ap trsfSwitch "right" 0 44
+        -ac trsfSwitch "bottom" 2 trsfCommonBtn
+
+        -ap trsfSelBtn2 "right" 0 66
+        -ac trsfSelBtn2 "left" 0 trsfSwitch
+        -ac trsfSelBtn2 "bottom" 2 trsfCommonBtn
+    trsfLyt;
+
+showWindow $cg_trsftrsfWin;
+}
+cg_transfer();

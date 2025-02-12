@@ -1,0 +1,326 @@
+/*--------------------------------------------------------------------------
+Source the script or copy the entire code to a shelf button
+--------------------------------------------------------------------------*/
+
+global float $cg_mdlsldGray = 0.3;
+global int $cg_mdlsldCamNameWidth = 200;
+
+// Init slider command
+global proc cg_mdlsldInitSlider(int $cg_mdlsldSliderName){ 
+    undoInfo -stateWithoutFlush false;
+    
+    // Get current modelPanel name and associated camera
+    string $cg_mdlsldCrtPanel = `getPanel -withFocus`;
+
+    string $cg_mdlsldCrtPanelCam = `modelPanel -q -camera $cg_mdlsldCrtPanel`;
+    string $cg_mdlsldCrtPanelCamShape[] = `listRelatives -s $cg_mdlsldCrtPanelCam`;
+    string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCrtPanelCamShape[0]`;
+    
+    // change iconTextButton label with name of camera
+    iconTextButton -e -label $cg_mdlsldCrtPanelCam ("cg_mdlsldCam"+$cg_mdlsldSliderName+"Ctrl");
+    iconTextButton -e -c ("select -r "+$cg_mdlsldCrtPanelCam) ("cg_mdlsldCam"+$cg_mdlsldSliderName+"Ctrl");
+    
+    // Get model boundingbox values
+    string $cg_mdlsldSel[] = `ls -sl`;
+    float $cg_mdlsldBBValues[] = `xform -q -bbi $cg_mdlsldSel[0]`;
+    float $cg_mdlsldBBNum = ($cg_mdlsldBBValues[0] + $cg_mdlsldBBValues[1] + $cg_mdlsldBBValues[2] + $cg_mdlsldBBValues[3] + $cg_mdlsldBBValues[4] + $cg_mdlsldBBValues[5]) / 3;
+    
+    // BoundingBox center points
+    float $cg_mdlsldCamCenter[] = `getAttr ($cg_mdlsldCrtPanelCam+".t")`; // pointA
+    float $cg_mdlsldObjCenter[] = `objectCenter -global $cg_mdlsldSel[0]`; // pointB
+    
+    float $cg_mdlsldVectorX = `pow ($cg_mdlsldObjCenter[0] - $cg_mdlsldCamCenter[0]) 2`;
+    float $cg_mdlsldVectorY = `pow ($cg_mdlsldObjCenter[1] - $cg_mdlsldCamCenter[1]) 2`;
+    float $cg_mdlsldVectorZ = `pow ($cg_mdlsldObjCenter[2] - $cg_mdlsldCamCenter[2]) 2`;
+    
+    float $cg_mdlsldDistanceFromCamera = `sqrt($cg_mdlsldVectorX+$cg_mdlsldVectorY+$cg_mdlsldVectorZ)`;
+    
+    floatField -e -v $cg_mdlsldDistanceFromCamera ("cg_mdlsldDepth"+$cg_mdlsldSliderName+"Ctrl");
+        
+    // Set imagePlane at the middle of object
+    setAttr ($cg_mdlsldCrtImagePlane[0] + ".depth") $cg_mdlsldDistanceFromCamera;
+    select -cl;
+
+    undoInfo -stateWithoutFlush true;
+}
+
+// Sliding action command sets imagePlane depth value to slider's value
+//
+global proc cg_mdlsldDepthCmd(int $cg_mdlsldDepthCmdId){
+    undoInfo -stateWithoutFlush false;
+    
+    // Get current modelPanel name and associated camera
+    string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$cg_mdlsldDepthCmdId+"Ctrl")`;
+    string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+    float $cg_mdlsldSliderValue = `floatField -q -v ("cg_mdlsldDepth"+$cg_mdlsldDepthCmdId+"Ctrl")`;
+    string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCurrentSliderCamShape[0]`;
+    
+    setAttr ($cg_mdlsldCrtImagePlane[0] + ".depth") $cg_mdlsldSliderValue;
+    
+    undoInfo -stateWithoutFlush true;
+}
+
+// Sliding action command for imagePlane opacity
+//
+global proc cg_mdlsldOpacityCmd(int $cg_mdlsldOpacityCmdId){
+    undoInfo -stateWithoutFlush false;
+    
+    // Get current modelPanel name and associated camera
+    string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$cg_mdlsldOpacityCmdId+"Ctrl")`;
+    string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+    float $cg_mdlsldSliderValue = `floatSlider -q -v ("cg_mdlsldOpacity"+$cg_mdlsldOpacityCmdId+"Ctrl")`;
+    string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCurrentSliderCamShape[0]`;
+    
+    setAttr ($cg_mdlsldCrtImagePlane[0] + ".alphaGain") $cg_mdlsldSliderValue;
+    undoInfo -stateWithoutFlush true;
+}
+
+// Precision change command
+//
+global proc cg_mdlsldPrecisionChange(){
+    float $cg_mdlsldPrecisionValue = `floatField -q -v cg_mdlsldPrecisionFld`;
+    string $cg_mdlsldSlidersNames[] = `columnLayout -q -childArray cg_mdlsldLstLyt`;
+    int $cg_mdlsldSlidersCount = size($cg_mdlsldSlidersNames);
+    
+    for($i=0; $i<$cg_mdlsldSlidersCount; $i++){
+        floatField -e -step $cg_mdlsldPrecisionValue ("cg_mdlsldDepth"+$i+"Ctrl");
+    }
+}
+
+// Bring back imagePlane depth to 9999
+//
+global proc cg_mdlsldImgPlReset(int $cg_mdlsldImgPlResetId){
+    string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$cg_mdlsldImgPlResetId+"Ctrl")`;
+    string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+    string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCurrentSliderCamShape[0]`;
+    
+    setAttr ($cg_mdlsldCrtImagePlane[0] + ".depth") 9999;
+    setAttr ($cg_mdlsldCrtImagePlane[0] + ".alphaGain") 1;
+    setAttr ($cg_mdlsldCurrentSliderCamShape[0] + ".farClipPlane") 100000;
+    floatSlider -e -v 1 ("cg_mdlsldOpacity"+$cg_mdlsldImgPlResetId+"Ctrl");
+    floatField -e -v 9999 ("cg_mdlsldDepth"+$cg_mdlsldImgPlResetId+"Ctrl");
+}
+
+// Reset all imagePlanes
+//
+global proc cg_mdlsldImgPlResetAll(){
+    int $cg_mdlsldNumberOfCams = `columnLayout -q -numberOfChildren cg_mdlsldLstLyt`;
+    
+    for($i=0; $i<$cg_mdlsldNumberOfCams; $i++){
+        string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$i+"Ctrl")`;
+        string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+        string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCurrentSliderCamShape[0]`;
+        
+        setAttr ($cg_mdlsldCrtImagePlane[0] + ".depth") 9999;
+        setAttr ($cg_mdlsldCrtImagePlane[0] + ".alphaGain") 1;
+        setAttr ($cg_mdlsldCurrentSliderCamShape[0] + ".farClipPlane") 100000;
+        floatSlider -e -v 1 ("cg_mdlsldOpacity"+$i+"Ctrl");
+        floatField -e -v 9999 ("cg_mdlsldDepth"+$i+"Ctrl");
+    }
+}
+
+// Recenter imageplane to object
+//
+global proc cg_mdlsldImgPlCenter(int $cg_mdlsldImgPlCenterId){
+    
+    if(size(`ls -sl`)==1){
+        string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$cg_mdlsldImgPlCenterId+"Ctrl")`;
+        string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+        string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCurrentSliderCamShape[0]`;
+        
+        // Get model boundingbox values
+        string $cg_mdlsldSel[] = `ls -sl`;
+        float $cg_mdlsldBBValues[] = `xform -q -bbi $cg_mdlsldSel[0]`;
+        float $cg_mdlsldBBNum = ($cg_mdlsldBBValues[0] + $cg_mdlsldBBValues[1] + $cg_mdlsldBBValues[2] + $cg_mdlsldBBValues[3] + $cg_mdlsldBBValues[4] + $cg_mdlsldBBValues[5]) / 3;
+        
+        // BoundingBox center points
+        float $cg_mdlsldCamCenter[] = `getAttr ($cg_mdlsldCurrentSliderCam+".t")`; // pointA
+        float $cg_mdlsldObjCenter[] = `objectCenter -global $cg_mdlsldSel[0]`; // pointB
+        
+        float $cg_mdlsldVectorX = `pow ($cg_mdlsldObjCenter[0] - $cg_mdlsldCamCenter[0]) 2`;
+        float $cg_mdlsldVectorY = `pow ($cg_mdlsldObjCenter[1] - $cg_mdlsldCamCenter[1]) 2`;
+        float $cg_mdlsldVectorZ = `pow ($cg_mdlsldObjCenter[2] - $cg_mdlsldCamCenter[2]) 2`;
+        
+        float $cg_mdlsldDistanceFromCamera = `sqrt($cg_mdlsldVectorX+$cg_mdlsldVectorY+$cg_mdlsldVectorZ)`;
+        floatField -e -v $cg_mdlsldDistanceFromCamera ("cg_mdlsldDepth"+$cg_mdlsldImgPlCenterId+"Ctrl");
+        
+        // Set imagePlane at the middle of object
+        setAttr ($cg_mdlsldCrtImagePlane[0] + ".depth") $cg_mdlsldDistanceFromCamera;
+        select -cl;
+    }else{
+        error "Select an object first.";
+    }
+}
+
+// Reset all opacity to 1
+//
+global proc cg_mdlsldResetOpacity(){
+    int $cg_mdlsldNumberOfCams = `columnLayout -q -numberOfChildren cg_mdlsldLstLyt`;
+    
+    for($i=0; $i<$cg_mdlsldNumberOfCams; $i++){
+        string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$i+"Ctrl")`;
+        string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+        string $cg_mdlsldCrtImagePlane[] = `listConnections -type imagePlane $cg_mdlsldCurrentSliderCamShape[0]`;
+        
+        setAttr ($cg_mdlsldCrtImagePlane[0] + ".alphaGain") 1;
+        floatSlider -e -v 1 ("cg_mdlsldOpacity"+$i+"Ctrl");
+    }
+}
+
+// Disable pan/zoom on all the listed cameras
+//
+global proc cg_mdlsldPanZoom(){
+    int $cg_mdlsldNumberOfCams = `columnLayout -q -numberOfChildren cg_mdlsldLstLyt`;
+    
+    for($i=0; $i<$cg_mdlsldNumberOfCams; $i++){
+        string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$i+"Ctrl")`;
+        string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+        setAttr ($cg_mdlsldCurrentSliderCamShape[0] + ".panZoomEnabled") 0;
+    }
+}
+
+// Disable overscans on all the listed cameras
+//
+global proc cg_mdlsldOverscans(){
+    int $cg_mdlsldNumberOfCams = `columnLayout -q -numberOfChildren cg_mdlsldLstLyt`;
+    
+    for($i=0; $i<$cg_mdlsldNumberOfCams; $i++){
+        string $cg_mdlsldCurrentSliderCam = `iconTextButton -q -l ("cg_mdlsldCam"+$i+"Ctrl")`;
+        string $cg_mdlsldCurrentSliderCamShape[] = `listRelatives -s $cg_mdlsldCurrentSliderCam`;
+        setAttr ($cg_mdlsldCurrentSliderCamShape[0] + ".overscan") 1;
+    }
+}
+
+// Add camera command
+//
+global proc cg_mdlsldAddCam(){
+    global float $cg_mdlsldGray;
+    global int $cg_mdlsldCamNameWidth;
+    
+    int $cg_mdlsldRowId = `columnLayout -q -numberOfChildren cg_mdlsldLstLyt`;
+    
+    //Create a row of controls for a specific camera
+    rowLayout -nc 5 
+        -adj 3 
+        -cat 5 "right" 0
+        -p cg_mdlsldLstLyt
+        //-bgc .2 .2 .2 
+        ("cg_mdlsldRow"+$cg_mdlsldRowId);
+        
+        iconTextButton -l("camera"+$cg_mdlsldRowId)
+            -style "iconAndTextHorizontal" 
+            -image1 "attributes.png"
+            -h 23
+            -ann "Click to select camera"  
+            -w $cg_mdlsldCamNameWidth
+            -bgc 0.4 0.4 0.4 
+            ("cg_mdlsldCam"+$cg_mdlsldRowId+"Ctrl");
+        floatField -ann"Ctrl+MMB Drag for more precision" 
+            //-nbg false 
+            -pre 4
+            -step 0.01 
+            -w 100
+            -h 25
+            -bgc 0.25 0.4 0.45
+            -cc ("cg_mdlsldDepthCmd("+$cg_mdlsldRowId+")")
+            -ec ("cg_mdlsldDepthCmd("+$cg_mdlsldRowId+")")
+			-dc ("cg_mdlsldDepthCmd("+$cg_mdlsldRowId+")")
+            ("cg_mdlsldDepth"+$cg_mdlsldRowId+"Ctrl");
+        floatSlider -v 1 
+            -min 0
+            -max 1
+            -step 0.01
+            -dc ("cg_mdlsldOpacityCmd("+$cg_mdlsldRowId+")")
+            ("cg_mdlsldOpacity"+$cg_mdlsldRowId+"Ctrl");
+        iconTextButton -l"C" 
+            -w 20
+            -c("cg_mdlsldImgPlCenter("+$cg_mdlsldRowId+")")
+            -ann"Center imagePlane on selected object" 
+            -style "textOnly" 
+            -bgc 0.6 0.5 0.1
+            ("cg_mdlsldCenter"+$cg_mdlsldRowId+"Ctrl");
+        iconTextButton -l"R" 
+            -w 20
+            -c("cg_mdlsldImgPlReset("+$cg_mdlsldRowId+")")
+            -ann"Reset imagePlane depth value back to 9999 and opacity to 1." 
+            -style "textOnly" 
+            -bgc 0.6 0.3 0.3
+            ("cg_mdlsldReset"+$cg_mdlsldRowId+"Ctrl");
+        
+            
+    // Process camera controls
+    cg_mdlsldInitSlider($cg_mdlsldRowId);
+}
+
+/*--------------------------------------------------------------------------
+
+                            I N T E R F A C E 
+
+--------------------------------------------------------------------------*/
+
+if(`window -q -ex cg_mdlsldWin`){deleteUI cg_mdlsldWin;}
+global int $cg_mdlsldCamNameWidth;
+
+window -t "Model Slider" 
+    -rtf true 
+    -mb true 
+    -topLeftCorner 200 860 
+    cg_mdlsldWin;
+    
+menu -l"Reset...";
+    menuItem -l"Disable all camera Pan/Zoom" -c"cg_mdlsldPanZoom()";
+    menuItem -l"Disable all camera Overscans" -c"cg_mdlsldOverscans()";
+
+columnLayout -adj true -co "both" 5 cg_mdlsldMainLyt;
+
+	// Top Buttons
+    // iconTextButton -q -h cg_mdlsldBFBtn
+    separator -style"none" -h 5;
+    rowLayout -nc 3 -adj 3 cg_mdlsldTopBtns;
+        text -l"Sliding Precision:" -w $cg_mdlsldCamNameWidth;
+        floatField -w 100
+            -vcc"cg_mdlsldPrecisionChange()"
+            -ec"cg_mdlsldPrecisionChange()"
+            -cc"cg_mdlsldPrecisionChange()" 
+            -pre 4 
+            -bgc 0.2 0.2 0.2
+            -v 0.01 
+            cg_mdlsldPrecisionFld;
+        iconTextButton -l"Add Camera" 
+            -style "textOnly"
+            -ann "Set a camera view and select an object"  
+            -w 100 
+            -c"cg_mdlsldAddCam()"
+            -bgc $cg_mdlsldGray $cg_mdlsldGray $cg_mdlsldGray 
+            cg_mdlsldAddBtn;
+    setParent..;
+    
+    // Controls description
+    //
+    separator -style"in" -h 10;
+    rowLayout -nc 3 -adj 3 -cat 4 "right" 0 cg_mdlsldDescrip;
+        text -align "center" 
+            -l" "
+            -w $cg_mdlsldCamNameWidth;
+        iconTextButton -l"Depth"
+            -style"textOnly" 
+            -c "cg_mdlsldImgPlResetAll()"
+            -w 100;
+        iconTextButton -l"Opacity" 
+            -style "textOnly"
+            -c "cg_mdlsldResetOpacity()";
+    setParent..;
+    
+    // List of cameras container
+    //
+    columnLayout -adj true cg_mdlsldLstLyt;
+	setParent..;
+	separator -style"none" -h 5;
+
+// Launch script with conditions
+//
+string $sel[] = `ls -sl`;
+if(size($sel)==1){
+    showWindow cg_mdlsldWin;
+    cg_mdlsldAddCam();
+}else{error "Select a single mesh.";}
